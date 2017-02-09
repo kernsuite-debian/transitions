@@ -1,0 +1,18 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+export DH_VERBOSE=1
+export PYBUILD_NAME=transitions
+
+%:
+	dh $@ --with python2,python3 --buildsystem=pybuild  --parallel
+
+override_dh_auto_clean:
+	dh_auto_clean
+	rm -rf transitions.egg-info
+	rm -rf .eggs
+
+override_dh_auto_test:
+	true
+
+

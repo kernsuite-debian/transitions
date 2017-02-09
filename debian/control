@@ -1,0 +1,27 @@
+Source: transitions
+Section: python
+Priority: optional
+Maintainer: Gijs Molenaar (launchpad ppa build key) <gijs@pythonic.nl>
+Build-Depends: debhelper (>= 8.0.0),
+    python-all,
+    python-setuptools,
+    python3-all,
+    python3-setuptools
+Standards-Version: 3.9.4
+Homepage: https://github.com/tyarkoni/transitions
+Vcs-Git: git://github.com/kernsuite-debian/transitions.git
+Vcs-Browser: https://github.com/kernsuite-debian/transitions.git
+X-Python-Version: >= 2.6
+X-Python3-Version: >= 3.4
+
+Package: python-transitions
+Architecture: any
+Provides: ${python:Provides}
+Depends: ${python:Depends}, ${misc:Depends}, ${shlibs:Depends}
+Description:  lightweight, object-oriented finite state machine implementation
+
+Package: python3-transitions
+Architecture: any
+Provides: ${python3:Provides}
+Depends: ${python3:Depends}, ${misc:Depends}, ${shlibs:Depends}
+Description:  lightweight, object-oriented finite state machine implementation
