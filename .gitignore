@@ -1,0 +1,13 @@
+*.pyc
+*.DS_Store
+*~
+build/
+dist
+dist/*
+*.egg-info
+*.iml
+.idea
+.coverage
+.ipynb_checkpoints
+examples/state.png
+.tox
