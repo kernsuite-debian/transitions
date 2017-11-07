@@ -1,9 +1,95 @@
 # Changelog
 
+
+## 0.6.2 (November, 2017)
+
+Release 0.6.2 is a minor release and contains new features and bug fixes but also several internal changes:
+
+- Documentation: Add docstring to every public method
+- Bugfix #257: Readme example variable had been capitalized (thanks to @fedesismo)
+- Add `appveyor.yml` for Windows testing; However, Windows testing is disabled due to #258
+- Bugfix #262: Timeout threads prevented program from execution when main thread ended (thanks to @tkuester)
+- `prep_ordered_arg` is now protected in `core`
+- Convert `logger` instances to `_LOGGER` to comply with protected module constant naming standards
+- `traverse` is now protected in `HierarchicalMachine`
+- Remove abstract class `Diagram` since it did not add functionality to `diagrams`
+- Specify several overrides of `add_state` or `add_transition` to keep the base class parameters instead of `*args` and `**kwargs`
+- Change several `if len(x) > 0:` checks to `if x:` as suggested by the static code analysis to make use of falsy empty lists/strings.
+
+## 0.6.1 (September, 2017)
+
+Release 0.6.1 is a minor release and contains new features as well as bug fixes:
+
+- Feature #245: Callback definitions ('before', 'on_enter', ...) have been moved to classes `Transition` and `State`
+- Bugfix #253: `Machine.remove_transitions` converted `defaultdict` into dict (thanks @Synss)
+- Bugfix #248: `HierarchicalStateMachine`'s copy procedure used to cause issues with function callbacks and object references (thanks @Grey-Bit)
+- Renamed `Machine.id` to `Machine.name` to be consistent with the constructor parameter `name`
+- Add `Machine.add_transitions` for adding multiple transitions at once (thanks @Synss)
+
+## 0.6.0 (August, 2017)
+
+Release 0.6.0 is a major release and introduces new state features and bug fixes:
+
+- `add_state_features` convenience decorator supports creation of custom states
+- `Tags` makes states taggable
+- `Error` checks for error states (not accepted states that cannot be left); subclass of `Tags`
+- `Volatile` enables scoped/temporary state objects to handle context parameters
+- Removed `add_self` from `Machine` constructor 
+- `pygraphviz` is now optional; use `pip install transitions[diagrams]` to install it
+- Narrowed warnings filter to prevent output cluttering by other 3rd party  modules (thanks to @ksandeep)
+- Reword HSM exception when wrong state object had been passedn (thanks to @Blindfreddy)
+- Improved handling of partials during graph generation (thanks to @Synss)
+- Introduced check to allow explicit passing of callback functions which match the `on_enter_<state>` scheme (thanks to @termim)
+- Bug #243: on_enter/exit callbacks defined in dictionaries had not been assigned correctly in HSMs (thanks to @Blindfreddy)
+- Introduced workaround for Python 3 versions older than 3.4 to support dill version 0.2.7 and higher (thanks to @mmckerns)
+- Improved manifest (#242) to comply with distribution standards (thanks to @jodal)
+
+## 0.5.3 (May, 2017)
+
+Release 0.5.3 is a minor release and contains several bug fixes:
+
+- Bug #214: `LockedMachine` as a model prevented correct addition of `on_enter/exit_<state>` (thanks to @kr2)
+- Bug #217: Filtering rules for auto transitions in graphs falsely filtered certain transitions (thanks to @KarolOlko)
+- Bug #218: Uninitialized `EventData.transition` caused `AttributeError` in `EventData.__repr__` (thanks to @kunalbhagawati)
+- Bug #215: State instances passed to `initial` parameter of `Machine` constructor had not been processed properly (thanks @mathiasimmer)
+
+## 0.5.2 (April, 2017)
+
+Release 0.5.2 is a minor release and contains a bug fix:
+- Bug #213: prevent `LICENSE` to be installed to root of installation path
+
+## 0.5.1 (April, 2017)
+
+Release 0.5.1 is a minor release and contains new features and bug fixes:
+- Added reflexive transitions (thanks to @janLo)
+- Wildcards for reflexive (`wildcard_same`) and all (`wildcard_all`) destinations are `Machine` class variables now which can be altered if necessary.
+- Add LICENSE to packaged distribution (thanks to @bachp)
+- Bug #211: `prepare` and `finalized` had not been called for HierarchicalMachines (thanks to @booware) 
+
+## 0.5.0 (March, 2017)
+Release 0.5.0 is a major release:
+- CHANGED API: `MachineError` is now limited to internal error and has been replaced by `AttributeError` and `ValueError` where applicable (thanks to @ankostis)
+- CHANGED API: Phasing out `add_self`; `model=None` will add NO model starting from next major release; use `model='self'` instead.
+- Introduced deprecation warnings for upcoming changes concerning `Machine` keywords `model` and `add_self`
+- Introduced `Machine.remove_transition` (thanks to @PaleNeutron)
+- Introduced `Machine._create_state` for easier subclassing of states
+- `LockedMachine` now supports custom context managers for each model (thanks to @paulbovbel)
+- `Machine.before/after_state_change` can now be altered dynamically (thanks to @peendebak)
+- `Machine.add_ordered_transitions` now supports `prepare`, `conditons`, `unless`, `before` and `after` (thanks to @aforren1)
+- New `prepare_event` and `finalize_event` keywords to handle transitions globally (thanks to @ankostis)
+- New `show_auto_transitions` keyword for `GraphMachine.__init__` (default `False`); if enabled, show auto transitions in graph
+- New `show_roi` keyword for `GraphMachine._get_graph` (default `False`); if `True`, show only reachable states in retrieved graph
+- Test suite now skips contextual tests (e.g. pygraphviz) if dependencies cannot be found (thanks to @ankostis)
+- Improved string representation of several classes (thanks to @ankostis)
+- Improved `LockedMachine` performance by removing recursive locking
+- Improved graph layout for nested graphs
+- `transitions.extensions.nesting.AGraph` has been split up into `Graph` and `NestedGraph` for easier maintenance
+- Fixed bug related to pickling `RLock` in nesting
+- Fixed order of callback execution (thanks to @ankostis)
+- Fixed representation of condition names in graphs (thanks to @cemoody)
+
 ## 0.4.3 (December, 2016)
-
 Release 0.4.3 is a minor release and contains bug fixes and several new features:
-
 - Support dynamic model addition via `Machine.add_model` (thanks to @paulbovbel)
 - Allow user to explicitly pass a lock instance or context manager to LockedMachine (thanks to @paulbovbel)
 - Fixed issue related to parsing of HSMs (thanks to @steval and @user2154065 from SO)

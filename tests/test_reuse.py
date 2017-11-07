@@ -136,16 +136,16 @@ class TestTransitions(TestCase):
         siblings = ['A', {'name': 'B', 'children': ['1', self.stuff.machine]}]
         collision = ['A', {'name': 'B', 'children': ['A', self.stuff.machine]}]
 
-        m = Machine(None, states=correct)
+        m = Machine(states=correct)
         m.to_B.C.s3.a()
 
         with self.assertRaises(ValueError):
-            m = Machine(None, states=wrong_type)
+            m = Machine(states=wrong_type)
 
         with self.assertRaises(ValueError):
-            m = Machine(None, states=collision)
+            m = Machine(states=collision)
 
-        m = Machine(None, states=siblings)
+        m = Machine(states=siblings)
         m.to_B.s1()
         m.to_B.A()
 
@@ -236,3 +236,43 @@ class TestTransitions(TestCase):
         m_model.to('NEST%sC' % State.separator)
         m_model.go()
         self.assertTrue(m_model.prepared)
+
+    def test_reuse_self_reference(self):
+
+        class Nested(Machine):
+
+            def __init__(self, parent):
+                self.parent = parent
+                self.mock = MagicMock()
+                states = ['1', {'name': '2', 'on_enter': self.print_msg}]
+                transitions = [['finish', '*', '2']]
+                super(Nested, self).__init__(states=states, transitions=transitions, initial='1')
+
+            def print_msg(self):
+                self.mock()
+                self.parent.print_top()
+
+        class Top(Machine):
+
+            def print_msg(self):
+                self.mock()
+
+            def __init__(self):
+                self.nested = Nested(self)
+                self.mock = MagicMock()
+
+                states = ['A', {'name': 'B', 'children': self.nested}]
+                transitions = [dict(trigger='print_top', source='*', dest='=', after=self.print_msg),
+                               dict(trigger='to_nested', source='*', dest='B{0}1'.format(State.separator))]
+
+                super(Top, self).__init__(states=states, transitions=transitions, initial='A')
+
+        top_machine = Top()
+        top_machine.to_nested()
+        top_machine.finish()
+
+        self.assertEqual(top_machine, top_machine.nested.parent)
+        self.assertTrue(top_machine.mock.called)
+        self.assertTrue(top_machine.nested.mock.called)
+        self.assertIsNot(top_machine.nested.get_state('2').on_enter,
+                         top_machine.get_state('B{0}2'.format(State.separator)).on_enter)
