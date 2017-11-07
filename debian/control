@@ -8,7 +8,7 @@ Build-Depends: debhelper (>= 8.0.0),
     python3-all,
     python3-setuptools
 Standards-Version: 3.9.4
-Homepage: https://github.com/tyarkoni/transitions
+Homepage: https://github.com/pytransitions/transitions
 Vcs-Git: git://github.com/kernsuite-debian/transitions.git
 Vcs-Browser: https://github.com/kernsuite-debian/transitions.git
 X-Python-Version: >= 2.6
