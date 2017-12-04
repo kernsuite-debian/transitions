@@ -360,6 +360,13 @@ class TestTransitions(TestCase):
         m.next_state()
         self.assertEqual(m.state, 'middle')
 
+        # Alter initial state
+        m = Machine('self', states, initial='middle', ordered_transitions=True)
+        m.next_state()
+        self.assertEqual(m.state, 'end')
+        m.next_state()
+        self.assertEqual(m.state, 'beginning')
+
     def test_ordered_transition_error(self):
         m = Machine(states=['A'], initial='A')
         with self.assertRaises(ValueError):
@@ -862,6 +869,19 @@ class TestTransitions(TestCase):
         self.assertFalse(model.next_state())
         model.blocker = True
         self.assertTrue(model.next_state())
+
+    def test_get_transitions(self):
+        states = ['A', 'B', 'C', 'D']
+        m = Machine('self', states, initial='a', auto_transitions=False)
+        m.add_transition('go', ['A', 'B', 'C'], 'D')
+        m.add_transition('run', 'A', 'D')
+        self.assertEqual(
+            {(t.source, t.dest) for t in m.get_transitions('go')},
+            {('A', 'D'), ('B', 'D'), ('C', 'D')})
+        self.assertEqual(
+            [(t.source, t.dest)
+             for t in m.get_transitions(source='A', dest='D')],
+            [('A', 'D'), ('A', 'D')])
 
     def test_remove_transition(self):
         self.stuff.machine.add_transition('go', ['A', 'B', 'C'], 'D')
