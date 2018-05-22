@@ -1,3 +1,10 @@
+transitions (0.6.7-1kern1) bionic; urgency=medium
+
+  * New upstream version 0.6.6
+  * New upstream version 0.6.7
+
+ -- KERN packaging <packaging@kernsuite.info>  Tue, 22 May 2018 14:29:34 +0000
+
 transitions (0.6.3-1) xenial; urgency=medium
 
   * Imported Upstream version 0.6.3
