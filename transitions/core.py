@@ -12,6 +12,7 @@ try:
 except ImportError:
     # python2
     pass
+
 import inspect
 import itertools
 import logging
@@ -175,8 +176,7 @@ class Condition(object):
                 model attached to the current machine which is used to invoke
                 the condition.
         """
-        predicate = getattr(event_data.model, self.func) if isinstance(self.func, string_types) else self.func
-
+        predicate = event_data.machine.resolve_callable(self.func, event_data)
         if event_data.machine.send_event:
             return predicate(event_data) == self.target
         return predicate(*event_data.args, **event_data.kwargs) == self.target
@@ -252,14 +252,15 @@ class Transition(object):
 
         for cond in self.conditions:
             if not cond.check(event_data):
-                _LOGGER.debug("%sTransition condition failed: %s() does not " +
-                              "return %s. Transition halted.", event_data.machine.name, cond.func, cond.target)
+                _LOGGER.debug("%sTransition condition failed: %s() does not return %s. Transition halted.",
+                              event_data.machine.name, cond.func, cond.target)
                 return False
         for func in itertools.chain(machine.before_state_change, self.before):
             machine.callback(func, event_data)
             _LOGGER.debug("%sExecuted callback '%s' before transition.", event_data.machine.name, func)
 
-        self._change_state(event_data)
+        if self.dest:  # if self.dest is None this is an internal transition with no actual state change
+            self._change_state(event_data)
 
         for func in itertools.chain(self.after, machine.after_state_change):
             machine.callback(func, event_data)
@@ -811,7 +812,8 @@ class Machine(object):
                 we are transitioning into. This can be a single state or an
                 equal sign to specify that the transition should be reflexive
                 so that the destination will be the same as the source for
-                every given source.
+                every given source. If dest is None, this transition will be
+                an internal transition (exit/enter callbacks won't be processed).
             conditions (string or list): Condition(s) that must pass in order
                 for the transition to take place. Either a list providing the
                 name of a callable, or a list of callables. For the transition
@@ -837,7 +839,7 @@ class Machine(object):
 
         for state in source:
             _dest = state if dest == self.wildcard_same else dest
-            if self._has_state(_dest):
+            if _dest and self._has_state(_dest):
                 _dest = _dest.name
             _trans = self._create_transition(state, _dest, conditions, unless, before,
                                              after, prepare, **kwargs)
@@ -971,23 +973,60 @@ class Machine(object):
                 delattr(model, trigger)
             del self.events[trigger]
 
+    def dispatch(self, trigger, *args, **kwargs):
+        """ Trigger an event on all models assigned to the machine.
+        Args:
+            trigger (str): Event name
+            *args (list): List of arguments passed to the event trigger
+            **kwargs (dict): Dictionary of keyword arguments passed to the event trigger
+        Returns:
+            bool The truth value of all triggers combined with AND
+        """
+        return all([getattr(model, trigger)(*args, **kwargs) for model in self.models])
+
     def callback(self, func, event_data):
         """ Trigger a callback function with passed event_data parameters. In case func is a string,
             the callable will be resolved from the passed model in event_data. This function is not intended to
             be called directly but through state and transition callback definitions.
         Args:
-            func (callable or str): The callback function.
+            func (string, callable): The callback function.
+                1. First, if the func is callable, just call it
+                2. Second, we try to import string assuming it is a path to a func
+                3. Fallback to a model attribute
             event_data (EventData): An EventData instance to pass to the
                 callback (if event sending is enabled) or to extract arguments
                 from (if event sending is disabled).
         """
-        if isinstance(func, string_types):
-            func = getattr(event_data.model, func)
 
+        func = self.resolve_callable(func, event_data)
         if self.send_event:
             func(event_data)
         else:
             func(*event_data.args, **event_data.kwargs)
+
+    @staticmethod
+    def resolve_callable(func, event_data):
+        """ Converts path to a callable into callable
+        Args:
+            func (string, callable): Path to a callable
+            event_data (EventData): Currently processed event
+        Returns:
+            callable function resolved from string or func
+        """
+        if isinstance(func, string_types):
+            try:
+                func = getattr(event_data.model, func)
+            except AttributeError:
+                try:
+                    mod, name = func.rsplit('.', 1)
+                    m = __import__(mod)
+                    for n in mod.split('.')[1:]:
+                        m = getattr(m, n)
+                    func = getattr(m, name)
+                except (ImportError, AttributeError, ValueError):
+                    raise AttributeError("Callable with name '%s' could neither be retrieved from the passed "
+                                         "model nor imported from a module.")
+        return func
 
     def _has_state(self, state):
         if isinstance(state, State):

@@ -72,7 +72,13 @@ class TestTransitions(TestCase):
         walker.to_A()
         self.assertEqual(walker.state, 'A')
         walker.calc()
-        self.assertEqual(walker.state, 'C')
+        self.assertEqual(walker.state, 'C_1')
+
+    def test_blueprint_initial_false(self):
+        child = Machine(states=['A', 'B'], initial='A')
+        parent = Machine(states=['a', 'b', {'name': 'c', 'children': child, 'initial': False}])
+        parent.to_c()
+        self.assertEqual(parent.state, 'c')
 
     def test_blueprint_remap(self):
         states = ['1', '2', '3', 'finished']
@@ -244,8 +250,8 @@ class TestTransitions(TestCase):
             def __init__(self, parent):
                 self.parent = parent
                 self.mock = MagicMock()
-                states = ['1', {'name': '2', 'on_enter': self.print_msg}]
-                transitions = [['finish', '*', '2']]
+                states = ['1', '2']
+                transitions = [{'trigger': 'finish', 'source': '*', 'dest': '2', 'after': self.print_msg}]
                 super(Nested, self).__init__(states=states, transitions=transitions, initial='1')
 
             def print_msg(self):

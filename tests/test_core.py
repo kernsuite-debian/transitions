@@ -20,6 +20,14 @@ except ImportError:
     from mock import MagicMock
 
 
+def on_exit_A(event):
+    event.model.exit_A_called = True
+
+
+def on_exit_B(event):
+    event.model.exit_B_called = True
+
+
 class TestTransitions(TestCase):
 
     def setUp(self):
@@ -266,7 +274,7 @@ class TestTransitions(TestCase):
         n.advance()
         self.assertTrue(n.is_B())
         with self.assertRaises(ValueError):
-            m = NewMachine(state=['A', 'B'])
+            NewMachine(state=['A', 'B'])
 
     def test_send_event_data_callbacks(self):
         states = ['A', 'B', 'C', 'D', 'E']
@@ -463,6 +471,39 @@ class TestTransitions(TestCase):
         self.assertEqual(len(state_b.on_enter), 1)
         self.assertEqual(len(state_b.on_exit), 1)
 
+    def test_state_callable_callbacks(self):
+
+        class Model:
+
+            def __init__(self):
+                self.exit_A_called = False
+                self.exit_B_called = False
+
+            def on_enter_A(self, event):
+                pass
+
+            def on_enter_B(self, event):
+                pass
+
+        states = [State(name='A', on_enter='on_enter_A', on_exit='tests.test_core.on_exit_A'),
+                  State(name='B', on_enter='on_enter_B', on_exit=on_exit_B),
+                  State(name='C', on_enter='tests.test_core.AAAA')]
+
+        model = Model()
+        machine = Machine(model, states=states, send_event=True, initial='A')
+        state_a = machine.get_state('A')
+        state_b = machine.get_state('B')
+        self.assertEqual(len(state_a.on_enter), 1)
+        self.assertEqual(len(state_a.on_exit), 1)
+        self.assertEqual(len(state_b.on_enter), 1)
+        self.assertEqual(len(state_b.on_exit), 1)
+        model.to_B()
+        self.assertTrue(model.exit_A_called)
+        model.to_A()
+        self.assertTrue(model.exit_B_called)
+        with self.assertRaises(AttributeError):
+            model.to_C()
+
     def test_pickle(self):
         import sys
         if sys.version_info < (3, 4):
@@ -484,6 +525,20 @@ class TestTransitions(TestCase):
         m2 = pickle.loads(dump)
         self.assertEqual(m.state, m2.state)
         m2.run()
+
+    def test_pickle_model(self):
+        import sys
+        if sys.version_info < (3, 4):
+            import dill as pickle
+        else:
+            import pickle
+
+        self.stuff.to_B()
+        dump = pickle.dumps(self.stuff)
+        self.assertIsNotNone(dump)
+        model2 = pickle.loads(dump)
+        self.assertEqual(self.stuff.state, model2.state)
+        model2.to_F()
 
     def test_queued(self):
         states = ['A', 'B', 'C', 'D']
@@ -684,6 +739,16 @@ class TestTransitions(TestCase):
         # for backwards compatibility model should return a model instance
         # rather than a list
         self.assertNotIsInstance(m.model, list)
+
+    def test_dispatch(self):
+        s1, s2 = Stuff(), Stuff()
+        states = ['A', 'B', 'C']
+        m = Machine(model=s1, states=states, ignore_invalid_triggers=True,
+                    initial=states[0], transitions=[['go', 'A', 'B'], ['go', 'B', 'C']])
+        m.add_model(s2, initial='B')
+        m.dispatch('go')
+        self.assertEqual(s1.state, 'B')
+        self.assertEqual(s2.state, 'C')
 
     def test_string_trigger(self):
         def return_value(value):
@@ -915,6 +980,13 @@ class TestTransitions(TestCase):
         with self.assertRaises(MachineError):
             self.stuff.reflex()
         self.assertEqual(self.stuff.level, 3)
+
+    def test_internal_transition(self):
+        m = Machine(Stuff(), states=['A', 'B'], initial='A')
+        m.add_transition('move', 'A', None, prepare='increase_level')
+        m.model.move()
+        self.assertEqual(m.model.state, 'A')
+        self.assertEqual(m.model.level, 2)
 
 
 class TestWarnings(TestCase):

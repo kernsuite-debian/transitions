@@ -1,10 +1,10 @@
 # <a name="transitions-module"></a> transitions
-[![Version](https://img.shields.io/badge/version-v0.6.3-orange.svg)](https://github.com/pytransitions/transitions)
+[![Version](https://img.shields.io/badge/version-v0.6.7-orange.svg)](https://github.com/pytransitions/transitions)
 [![Build Status](https://travis-ci.org/pytransitions/transitions.svg?branch=master)](https://travis-ci.org/pytransitions/transitions)
 [![Coverage Status](https://coveralls.io/repos/pytransitions/transitions/badge.svg?branch=master&service=github)](https://coveralls.io/github/pytransitions/transitions?branch=master)
 [![Pylint](https://img.shields.io/badge/pylint-9.71%2F10-green.svg)](https://github.com/pytransitions/transitions)
 [![PyPi](https://img.shields.io/pypi/v/transitions.svg)](https://pypi.org/project/transitions)
-[![GitHub commits](https://img.shields.io/github/commits-since/pytransitions/transitions/0.6.2.svg)](https://github.com/pytransitions/transitions/compare/0.6.2...master)
+[![GitHub commits](https://img.shields.io/github/commits-since/pytransitions/transitions/0.6.6.svg)](https://github.com/pytransitions/transitions/compare/0.6.6...master)
 [![License](https://img.shields.io/github/license/pytransitions/transitions.svg)](LICENSE)
 <!--[![Name](Image)](Link)-->
 
@@ -30,11 +30,12 @@ A lightweight, object-oriented state machine implementation in Python. Compatibl
         - [Automatic transitions](#automatic-transitions-for-all-states)
         - [Transitioning from multiple states](#transitioning-from-multiple-states)
         - [Reflexive transitions from multiple states](#reflexive-from-multiple-states)
+        - [Internal transitions](#internal-transitions)
         - [Ordered transitions](#ordered-transitions)
         - [Queued transitions](#queued-transitions)
         - [Conditional transitions](#conditional-transitions)
         - [Callbacks](#transition-callbacks)
-    - [Execution order](#execution-order)
+    - [Callback resolution and execution order](#execution-order)
     - [Passing data](#passing-data)
     - [Alternative initialization patterns](#alternative-initialization-patterns)
     - [Logging](#logging)
@@ -398,6 +399,10 @@ This behavior is generally desirable, since it helps alert you to problems in yo
 >>> # ...or even just for a single state. Here, exceptions will only be suppressed when the current state is A.
 >>> states = [State('A', ignore_invalid_triggers=True), 'B', 'C']
 >>> m = Machine(lump, states)
+>>> # ...this can be inverted as well if just one state should raise an exception
+>>> # since the machine's global value is not applied to a previously initialized state.
+>>> states = ['A', 'B', State('C')] # the default value for 'ignore_invalid_triggers' is False
+>>> m = Machine(lump, states, ignore_invalid_triggers=True)
 ```
 
 If you need to know which transitions are valid from a certain state, you can use `get_triggers`:
@@ -448,7 +453,7 @@ machine.add_transition('to_liquid', '*', 'liquid')
 
 Note that wildcard transitions will only apply to states that exist at the time of the add_transition() call. Calling a wildcard-based transition when the model is in a state added after the transition was defined will elicit an invalid transition message, and will not transition to the target state.
 
-#### <a name="reflexive-from-multiple-states"></a>Transitioning from multiple states
+#### <a name="reflexive-from-multiple-states"></a>Reflexive transitions from multiple states
 A reflexive trigger (trigger that has the same state as source and destination) can easily be added specifying `=` as destination.
 This is handy if the same reflexive trigger should be added to multiple states.
 For example:
@@ -458,6 +463,15 @@ machine.add_transition('touch', ['liquid', 'gas', 'plasma'], '=', after='change_
 ```
 
 This will add reflexive transitions for all three states with `touch()` as trigger and with `change_shape` executed after each trigger.
+
+#### <a name="internal-transitions"></a>Internal transitions
+In contrast to reflexive transitions, internal transitions will never actually leave the state.
+This means that transition-related callbacks such as `before` or `after` will be processed while state-related callbacks `exit` or `enter` will not.
+To define a transition to be internal, set the destination to `None`.
+
+```python
+machine.add_transition('internal', ['liquid', 'gas'], None, after='change_shape')
+```
 
 #### <a name="ordered-transitions"></a> Ordered transitions
 A common desire is for state transitions to follow a strict linear sequence. For instance, given states `['A', 'B', 'C']`, you might want valid transitions for `A` → `B`, `B` → `C`, and `C` → `A` (but no other pairs).
@@ -671,7 +685,37 @@ print(lump.state)
 >>> initial
 ```
 
-### <a name="execution-order"> Execution order
+### <a name="execution-order"></a>Callback resolution and execution order
+
+As you have probably already realized, the standard way of passing callbacks to states and transitions is by name.
+When processing callbacks, Transitions will use the name to retrieve the related callback from the model.
+If the method cannot be retrieved and it contains dots, Transitions will treat the name as a path to a module function and try to import it.
+Alternatively, you can pass callables such as (bound) functions directly.
+
+```python
+from transitions import Machine
+from mod import imported_func
+
+
+class Model(object):
+
+    def a_callback(self):
+        imported_func()
+
+
+model = Model()
+machine = Machine(model=model, states=['A'], initial='A')
+machine.add_transition('by_name', 'A', 'A', after='a_callback')
+machine.add_transition('by_reference', 'A', 'A', after=model.a_callback)
+machine.add_transition('imported', 'A', 'A', after='mod.imported_func')
+
+model.by_name()
+model.by_reference()
+model.imported()
+```
+The callback resolution is done in `Machine.resolve_callbacks`.
+This method can be overridden in case more complex callback resolution strategies are required.
+
 In summary, callbacks on transitions are executed in the following order:
 
 |      Callback                  | Current State |               Comments                                      |
@@ -990,7 +1034,7 @@ A configuration making use of  `initial` could look like this:
 
 ```python
 # ...
-states = ['standing', 'walking', {'name': 'caffeinated', 'initial': 'dithering' 'children':['dithering', 'running']}]
+states = ['standing', 'walking', {'name': 'caffeinated', 'initial': 'dithering', 'children': ['dithering', 'running']}]
 transitions = [
   ['walk', 'standing', 'walking'],
   ['stop', 'walking', 'standing'],
@@ -1075,17 +1119,19 @@ states = ['waiting', 'collecting', {'name': 'counting', 'children': counter}]
 transitions = [
     ['collect', '*', 'collecting'],
     ['wait', '*', 'waiting'],
-    ['count', 'collecting', 'counting_1']
+    ['count', 'collecting', 'counting']
 ]
 
 collector = Machine(states=states, transitions=transitions, initial='waiting')
 collector.collect()  # collecting
-collector.count()  # let's see what we got
+collector.count()  # let's see what we got; counting_1
 collector.increase()  # counting_2
 collector.increase()  # counting_3
 collector.done()  # collector.state == counting_done
 collector.wait()  # collector.state == waiting
 ```
+
+If a `HierarchicalStateMachine` is passed with the `children` keyword, the initial state of this machine will be assigned to the new parent state. In the above example we see that entering `counting` will also enter `counting_1`. If this is undesired behaviour and the machine should rather halt in the parent state, the user can pass `initial` as `False` like `{'name': 'counting', 'children': counter, 'initial': False}`.
 
 Sometimes you want such an embedded state collection to 'return' which means after it is done it should exit and transit to one of your states. To achieve this behaviour you can remap state transitions. In the example above we would like the counter to return if the state `done` was reached. This is done as follows:
 

@@ -29,6 +29,10 @@ except ImportError:  # pragma: no cover
 state_separator = State.separator
 
 
+class Dummy(object):
+    pass
+
+
 class TestTransitions(TestsCore):
 
     def setUp(self):
@@ -40,6 +44,10 @@ class TestTransitions(TestsCore):
     def tearDown(self):
         State.separator = state_separator
         pass
+
+    def test_add_model(self):
+        model = Dummy()
+        self.stuff.machine.add_model(model, initial='E')
 
     def test_function_wrapper(self):
         from transitions.extensions.nesting import FunctionWrapper
@@ -70,6 +78,15 @@ class TestTransitions(TestsCore):
             model=s, states=states, transitions=transitions, initial='State2')
         s.advance()
         self.assertEqual(s.message, 'Hello World!')
+
+    def test_init_machine_with_nested_states(self):
+        a = State('A')
+        b = State('B')
+        b_1 = State('1', parent=b)
+        b_2 = State('2', parent=b)
+        m = self.stuff.machine_cls(states=[a, b])
+        self.assertEqual(b_1.name, 'B{0}1'.format(state_separator))
+        m.to("B{0}1".format(state_separator))
 
     def test_property_initial(self):
         # Define with list of dictionaries
@@ -164,11 +181,17 @@ class TestTransitions(TestsCore):
 
     def test_add_custom_state(self):
         s = self.stuff
-        s.machine.add_states([{'name': 'E', 'children': ['1', '2', '3']}])
+        s.machine.add_states([{'name': 'E', 'children': ['1', '2']}])
+        s.machine.add_state('3', parent='E')
         s.machine.add_transition('go', '*', 'E%s1' % State.separator)
+        s.machine.add_transition('walk', '*', 'E%s3' % State.separator)
         s.machine.add_transition('run', 'E', 'C{0}3{0}a'.format(State.separator))
         s.go()
+        self.assertEqual(s.state, 'E{0}1'.format(State.separator))
+        s.walk()
+        self.assertEqual(s.state, 'E{0}3'.format(State.separator))
         s.run()
+        self.assertEqual(s.state, 'C{0}3{0}a'.format(State.separator))
 
     def test_enter_exit_nested_state(self):
         mock = MagicMock()
@@ -219,39 +242,51 @@ class TestTransitions(TestsCore):
 
     def test_enter_exit_nested(self):
         s = self.stuff
-        s.machine.add_transition('advance', 'A', 'C%s1' % State.separator)
+        s.machine.add_transition('advance', 'A', 'C{0}3'.format(State.separator))
         s.machine.add_transition('reverse', 'C', 'A')
-        s.machine.add_transition('lower', 'C%s1' % State.separator, 'C{0}3{0}a'.format(State.separator))
+        s.machine.add_transition('lower', ['C{0}1'.format(State.separator),
+                                           'C{0}3'.format(State.separator)], 'C{0}3{0}a'.format(State.separator))
         s.machine.add_transition('rise', 'C%s3' % State.separator, 'C%s1' % State.separator)
         s.machine.add_transition('fast', 'A', 'C{0}3{0}a'.format(State.separator))
-        for name, state in s.machine.states.items():
+        for state in s.machine.states.values():
             state.on_enter.append('increase_level')
             state.on_exit.append('decrease_level')
 
         s.advance()
-        self.assertEqual(s.state, 'C%s1' % State.separator)
+        self.assertEqual(s.state, 'C%s3' % State.separator)
         self.assertEqual(s.level, 2)
+        self.assertEqual(s.transitions, 3)  # exit A; enter C,3
         s.lower()
         self.assertEqual(s.state, 'C{0}3{0}a'.format(State.separator))
         self.assertEqual(s.level, 3)
+        self.assertEqual(s.transitions, 4)  # enter a
         s.rise()
         self.assertEqual(s.state, 'C%s1' % State.separator)
         self.assertEqual(s.level, 2)
+        self.assertEqual(s.transitions, 7)  # exit a, 3; enter 1
         s.reverse()
         self.assertEqual(s.state, 'A')
         self.assertEqual(s.level, 1)
+        self.assertEqual(s.transitions, 10)  # exit 1, C; enter A
         s.fast()
         self.assertEqual(s.state, 'C{0}3{0}a'.format(State.separator))
         self.assertEqual(s.level, 3)
+        self.assertEqual(s.transitions, 14)  # exit A; enter C, 3, a
         s.to_A()
         self.assertEqual(s.state, 'A')
         self.assertEqual(s.level, 1)
+        self.assertEqual(s.transitions, 18)  # exit a, 3, C; enter A
+        s.to_A()
+        self.assertEqual(s.state, 'A')
+        self.assertEqual(s.level, 1)
+        self.assertEqual(s.transitions, 20)  # exit A; enter A
         if State.separator in '_':
             s.to_C_3_a()
         else:
             s.to_C.s3.a()
         self.assertEqual(s.state, 'C{0}3{0}a'.format(State.separator))
         self.assertEqual(s.level, 3)
+        self.assertEqual(s.transitions, 24)  # exit A; enter C, 3, a
 
     def test_ordered_transitions(self):
         states = [{'name': 'first', 'children': ['second', 'third', {'name': 'fourth', 'children': ['fifth', 'sixth']},
@@ -446,13 +481,15 @@ class TestTransitions(TestsCore):
         m = self.stuff.machine_cls(states=states, initial='A')
 
     def test_intial_state(self):
-        states = ['A', {'name': 'B', 'initial': '2',
-                        'children': ['1', {'name': '2', 'initial': 'a',
-                                           'children': ['a', 'b']}]}]
+        states = [{'name': 'A', 'children': ['1', '2'], 'initial': '2'},
+                  {'name': 'B', 'initial': '2',
+                   'children': ['1', {'name': '2', 'initial': 'a',
+                                      'children': ['a', 'b']}]}]
         transitions = [['do', 'A', 'B'],
                        ['do', 'B{0}2'.format(state_separator),
                         'B{0}1'.format(state_separator)]]
         m = self.stuff.machine_cls(states=states, transitions=transitions, initial='A')
+        self.assertEqual(m.state, 'A{0}2'.format(state_separator))
         m.do()
         self.assertEqual(m.state, 'B{0}2{0}a'.format(state_separator))
         self.assertTrue(m.is_B(allow_substates=True))
@@ -476,6 +513,13 @@ class TestTransitions(TestsCore):
         print(trans)
         self.assertEqual(len(trans), 3)
         self.assertTrue('relax' in trans)
+
+    def test_internal_transitions(self):
+        s = self.stuff
+        s.machine.add_transition('internal', 'A', None, prepare='increase_level')
+        s.internal()
+        self.assertEqual(s.state, 'A')
+        self.assertEqual(s.level, 2)
 
 
 @skipIf(pgv is None, 'AGraph diagram requires pygraphviz')
