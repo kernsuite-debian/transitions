@@ -124,7 +124,11 @@ class Graph(object):
                 src = transitions[0]
                 edge_attr = {}
                 for trans in transitions[1]:
-                    dst = trans.dest
+                    if trans.dest is None:
+                        dst = src
+                        label += " [internal]"
+                    else:
+                        dst = trans.dest
                     edge_attr['label'] = self._transition_label(label, trans)
                     if container.has_edge(src, dst):
                         edge = container.get_edge(src, dst)
@@ -233,34 +237,39 @@ class NestedGraph(Graph):
                 label_pos = 'label'
                 if src.children:
                     edge_attr['ltail'] = "cluster_" + src.name
-                    src = src.name + "_anchor"
+                    src_name = src.name + "_anchor"
                 else:
-                    src = src.name
+                    src_name = src.name
 
                 for trans in transitions[1]:
                     if trans in self.seen_transitions:
                         continue
-                    if not container.has_node(trans.dest) and _get_subgraph(container, 'cluster_' + trans.dest) is None:
+                    if trans.dest is None:
+                        dst = src
+                        label += " [internal]"
+                    elif not container.has_node(trans.dest) and _get_subgraph(container, 'cluster_' + trans.dest) is None:
                         continue
+                    else:
+                        dst = self.machine.get_state(trans.dest)
 
                     self.seen_transitions.append(trans)
-                    dst = self.machine.get_state(trans.dest)
                     if dst.children:
-                        edge_attr['lhead'] = "cluster_" + dst.name
-                        dst = dst.name + '_anchor'
+                        if not src.is_substate_of(dst.name):
+                            edge_attr['lhead'] = "cluster_" + dst.name
+                        dst_name = dst.name + '_anchor'
                     else:
-                        dst = dst.name
+                        dst_name = dst.name
 
                     if 'ltail' in edge_attr:
-                        if _get_subgraph(container, edge_attr['ltail']).has_node(dst):
+                        if _get_subgraph(container, edge_attr['ltail']).has_node(dst_name):
                             del edge_attr['ltail']
 
                     edge_attr[label_pos] = self._transition_label(label, trans)
-                    if container.has_edge(src, dst):
-                        edge = container.get_edge(src, dst)
+                    if container.has_edge(src_name, dst_name):
+                        edge = container.get_edge(src_name, dst_name)
                         edge.attr[label_pos] += ' | ' + edge_attr[label_pos]
                     else:
-                        container.add_edge(src, dst, **edge_attr)
+                        container.add_edge(src_name, dst_name, **edge_attr)
 
         return events
 
@@ -274,16 +283,16 @@ class TransitionGraphSupport(Transition):
         machine = event_data.machine
         model = event_data.model
         dest = machine.get_state(self.dest)
+        graph = model.get_graph()
 
         # Mark the active node
-        machine.reset_graph_style(model.graph)
+        machine.reset_graph_style(graph)
 
         # Mark the previous node and path used
         if self.source is not None:
             source = machine.get_state(self.source)
-            machine.set_node_state(model.graph, source.name,
-                                   state='previous')
-            machine.set_node_state(model.graph, dest.name, state='active')
+            machine.set_node_state(graph, source.name, state='previous')
+            machine.set_node_state(graph, dest.name, state='active')
 
             if getattr(source, 'children', []):
                 source = source.name + '_anchor'
@@ -293,8 +302,7 @@ class TransitionGraphSupport(Transition):
                 dest = dest.name + '_anchor'
             else:
                 dest = dest.name
-            machine.set_edge_state(model.graph, source, dest,
-                                   state='previous', label=event_data.event.name)
+            machine.set_edge_state(graph, source, dest, state='previous', label=event_data.event.name)
 
         _super(TransitionGraphSupport, self)._change_state(event_data)  # pylint: disable=protected-access
 
@@ -307,23 +315,30 @@ class GraphMachine(Machine):
             transition_cls (cls): TransitionGraphSupport
     """
 
-    _pickle_blacklist = ['graph']
+    _pickle_blacklist = ['model_graphs']
+    graph_cls = Graph
     transition_cls = TransitionGraphSupport
 
+    # model_graphs cannot be pickled. Omit them.
     def __getstate__(self):
         return {k: v for k, v in self.__dict__.items() if k not in self._pickle_blacklist}
 
     def __setstate__(self, state):
         self.__dict__.update(state)
+        self.model_graphs = {}  # reinitialize new model_graphs
         for model in self.models:
-            graph = self._get_graph(model, title=self.title)
-            self.set_node_style(graph, model.state, 'active')
+            try:
+                graph = self._get_graph(model, title=self.title)
+                self.set_node_style(graph, model.state, 'active')
+            except AttributeError:
+                _LOGGER.warning("Graph for model could not be initialized after pickling.")
 
     def __init__(self, *args, **kwargs):
         # remove graph config from keywords
         self.title = kwargs.pop('title', 'State Machine')
         self.show_conditions = kwargs.pop('show_conditions', False)
         self.show_auto_transitions = kwargs.pop('show_auto_transitions', False)
+        self.model_graphs = {}
 
         # Update March 2017: This temporal overwrite does not work
         # well with inheritance. Since the tests pass I will disable it
@@ -346,7 +361,7 @@ class GraphMachine(Machine):
                 raise AttributeError('Model already has a get_graph attribute. Graph retrieval cannot be bound.')
             setattr(model, 'get_graph', partial(self._get_graph, model))
             model.get_graph()
-            self.set_node_state(model.graph, self.initial, 'active')
+            self.set_node_state(self.model_graphs[model], self.initial, 'active')
 
         # for backwards compatibility assign get_combined_graph to get_graph
         # if model is not the machine
@@ -354,14 +369,13 @@ class GraphMachine(Machine):
             setattr(self, 'get_graph', self.get_combined_graph)
 
     def _get_graph(self, model, title=None, force_new=False, show_roi=False):
-        if title is None:
-            title = self.title
-        if not hasattr(model, 'graph') or force_new:
-            model.graph = NestedGraph(self).get_graph(title) if isinstance(self, HierarchicalMachine) \
-                else Graph(self).get_graph(title)
-            self.set_node_state(model.graph, model.state, state='active')
-
-        return model.graph if not show_roi else self._graph_roi(model)
+        if force_new:
+            self.model_graphs[model] = self.graph_cls(self).get_graph(title if title is not None else self.title)
+            self.set_node_state(self.model_graphs[model], model.state, state='active')
+        try:
+            return self.model_graphs[model] if not show_roi else self._graph_roi(model)
+        except KeyError:
+            return self._get_graph(model, title, force_new=True, show_roi=show_roi)
 
     def get_combined_graph(self, title=None, force_new=False, show_roi=False):
         """ This method is currently equivalent to 'get_graph' of the first machine's model.
@@ -374,7 +388,7 @@ class GraphMachine(Machine):
                 the current state.
         Returns: AGraph of the first machine's model.
         """
-        _LOGGER.info('Returning graph of the first model. In future releases, this ' +
+        _LOGGER.info('Returning graph of the first model. In future releases, this '
                      'method will return a combined graph of all models.')
         return self._get_graph(self.models[0], title, force_new, show_roi)
 
@@ -439,9 +453,8 @@ class GraphMachine(Machine):
             func = self.set_graph_style
         func(graph, node, state)
 
-    @staticmethod
-    def _graph_roi(model):
-        graph = model.graph
+    def _graph_roi(self, model):
+        graph = model.get_graph()
         filtered = graph.copy()
 
         kept_nodes = set()
