@@ -1,3 +1,10 @@
+transitions (0.6.9-1) bionic; urgency=medium
+
+  [ Gijs Molenaar ]
+  * New upstream version 0.6.9
+
+ -- KERN packaging <packaging@kernsuite.info>  Thu, 08 Nov 2018 10:37:48 +0100
+
 transitions (0.6.8-1) bionic; urgency=medium
 
   [ Gijs Molenaar ]
