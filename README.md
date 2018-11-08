@@ -1,10 +1,10 @@
 # <a name="transitions-module"></a> transitions
-[![Version](https://img.shields.io/badge/version-v0.6.8-orange.svg)](https://github.com/pytransitions/transitions)
+[![Version](https://img.shields.io/badge/version-v0.6.9-orange.svg)](https://github.com/pytransitions/transitions)
 [![Build Status](https://travis-ci.org/pytransitions/transitions.svg?branch=master)](https://travis-ci.org/pytransitions/transitions)
 [![Coverage Status](https://coveralls.io/repos/pytransitions/transitions/badge.svg?branch=master&service=github)](https://coveralls.io/github/pytransitions/transitions?branch=master)
 [![Pylint](https://img.shields.io/badge/pylint-9.71%2F10-green.svg)](https://github.com/pytransitions/transitions)
 [![PyPi](https://img.shields.io/pypi/v/transitions.svg)](https://pypi.org/project/transitions)
-[![GitHub commits](https://img.shields.io/github/commits-since/pytransitions/transitions/0.6.6.svg)](https://github.com/pytransitions/transitions/compare/0.6.6...master)
+[![GitHub commits](https://img.shields.io/github/commits-since/pytransitions/transitions/0.6.8.svg)](https://github.com/pytransitions/transitions/compare/0.6.9...master)
 [![License](https://img.shields.io/github/license/pytransitions/transitions.svg)](LICENSE)
 <!--[![Name](Image)](Link)-->
 
@@ -510,7 +510,7 @@ def entering_C():
     print("I am in state C now!")
 
 states = ['A', 'B', 'C']
-machine = Machine(states=states)
+machine = Machine(states=states, initial='A')
 
 # we want a message when state transition to B has been completed
 machine.add_transition('advance', 'A', 'B', after=after_advance)
@@ -532,7 +532,7 @@ prepare -> before -> on_enter_B -> on_enter_C -> after.
 If queued processing is enabled, a transition will be finished before the next transition is triggered:
 
 ```python
-machine = Machine(states=states, queued=True)
+machine = Machine(states=states, queued=True, initial='A')
 ...
 machine.advance()
 >>> 'I am in state B now!'
@@ -732,6 +732,8 @@ In summary, callbacks on transitions are executed in the following order:
 | `'transition.after'`           | `destination` |                                                             |
 | `'machine.after_state_change'` | `destination` | default callbacks declared on model                         |
 | `'machine.finalize_event'`     | `source/destination` | callbacks will be executed even if no transition took place or an exception has been raised |
+
+If any callback raises an exception, the processing of callbacks is not continued. This means that when an error occurs before the transition (in `state.on_exit` or earlier), it is halted. In case there is a raise after the transition has been conducted (in `state.on_enter` or later), the state change persists and no rollback is happening. Callbacks specified in `machine.finalize_event` will always be executed unless the exception is raised by a finalizing callback itself.
 
 ### <a name="passing-data"></a>Passing data
 Sometimes you need to pass the callback functions registered at machine initialization some data that reflects the model's current state. Transitions allows you to do this in two different ways.
@@ -1253,6 +1255,7 @@ Currently, transitions comes equipped with the following state features:
     - keyword: `timeout` (int, optional) -- if passed, an entered state will timeout after `timeout` seconds
     - keyword: `on_timeout` (string/callable, optional) -- will be called when timeout time has been reached
     - will raise an `AttributeError` when `timeout` is set but `on_timeout` is not
+    - Note: A timeout is triggered in a thread. This implies several limitations (e.g. catching Exceptions raised in timeouts). Consider an event queue for more sophisticated applications.
 
 * **Tags** -- adds tags to states
     - keyword: `tags` (list, optional) -- assigns tags to a state
@@ -1262,6 +1265,7 @@ Currently, transitions comes equipped with the following state features:
     - inherits from `Tags` (if you use `Error` do not use `Tags`)
     - keyword: `accepted` (bool, optional) -- marks a state as accepted
     - alternatively the keyword `tags` can be passed, containing 'accepted'
+    - Note: Errors will only be raised if `auto_transitions` has been set to `False`. Otherwise every state can be exited with `to_<state>` methods.
     
 * **Volatile** -- initialises an object every time a state is entered
     - keyword: `volatile` (class, optional) -- every time the state is entered an object of type class will be assigned to the model. The attribute name is defined by `hook`. If omitted, an empty VolatileObject will be created instead
